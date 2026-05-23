@@ -34,3 +34,4 @@ coverage/
 # Secrets
 *.pem
 *.key
+backend/.env

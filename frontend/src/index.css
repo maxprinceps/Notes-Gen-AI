@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a1a;
+}
+
+/* Grid background for notes pages */
+.grid-bg {
+  background-color: #f9f9f9;
+  background-image:
+    linear-gradient(rgba(180,180,180,0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180,180,180,0.35) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Mermaid diagram sizing */
+.mermaid svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Smooth fade-in for note sections */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeSlideIn 0.35s ease forwards;
+}
+
+/* Typing cursor effect */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor::after {
+  content: "▋";
+  animation: blink 0.8s infinite;
+  color: #e67e00;
+  font-size: 0.9em;
+}
+
+/* ── PDF Print Styles ─────────────────────────────────────────────────────── */
+@media print {
+  /* Hide everything except notes */
+  .no-print { display: none !important; }
+
+  /* Reset page */
+  body { background: white !important; }
+
+  /* Each note card = one page */
+  .print-page {
+    page-break-after: always;
+    break-after: page;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Kill animations in print */
+  .fade-in { animation: none !important; }
+  .cursor::after { display: none !important; }
+
+  /* Keep grid background in print */
+  .grid-bg {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Keep all colors in print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* No margin on page */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}

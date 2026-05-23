@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+ENV/
+/.env
+
+# Node
+node_modules/
+dist/
+build/
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+.log
+
+# IDE / Editor
+.idea/
+
+# Sentry / coverage
+.coverage
+coverage/
+
+# Secrets
+*.pem
+*.key

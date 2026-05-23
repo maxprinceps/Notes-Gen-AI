@@ -301,10 +301,10 @@ function SectionHeader({ children }) {
 
 // ── Exam question — clickable to open AI chat ─────────────────────────────────
 function ExamQuestion({ question, topic, noteObj, subject, onChange }) {
-  const { openChat } = useChatStore();
+  const { openChatWithMessage } = useChatStore();
 
   const handleClick = () => {
-    openChat(
+    openChatWithMessage(
       topic,
       noteObj,
       `Help me write a complete answer for this exam question: "${question}"`

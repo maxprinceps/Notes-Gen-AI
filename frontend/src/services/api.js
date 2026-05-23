@@ -96,7 +96,7 @@ export async function regenerateElement(
  * Calls onDone when complete.
  */
 export async function streamChat(
-  { subject, topic, noteContext, selectedText, messages, userMessage },
+  { subject, topic, noteContext, selectedText, messages, userMessage, isExamQuestion = false },
   onChunk,
   onDone
 ) {
@@ -110,6 +110,7 @@ export async function streamChat(
       selected_text: selectedText,
       messages,
       user_message: userMessage,
+      is_exam_question: isExamQuestion,
     }),
   });
 

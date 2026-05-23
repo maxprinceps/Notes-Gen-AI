@@ -1,9 +1,3 @@
-/**
- * store/chatStore.js
- * Global state for the AI chat sidebar.
- * Chat history stored per topic.
- */
-
 import { create } from "zustand";
 
 const useChatStore = create((set, get) => ({
@@ -11,16 +5,26 @@ const useChatStore = create((set, get) => ({
   activeTopic: null,
   activeNote: null,
   selectedText: "",
-  histories: {},   // { [topicName]: [{id, role, content}] }
+  pendingMessage: null,  // force-sends on open, regardless of history
+  histories: {},
   isTyping: false,
 
+  // Open with selected text (selection popup)
   openChat: (topic, note, selectedText = "") =>
-    set({ isOpen: true, activeTopic: topic, activeNote: note, selectedText }),
+    set({ isOpen: true, activeTopic: topic, activeNote: note,
+          selectedText, pendingMessage: null }),
 
-  closeChat: () => set({ isOpen: false, selectedText: "" }),
+  // Open and immediately send a specific message (exam questions)
+  openChatWithMessage: (topic, note, message) =>
+    set({ isOpen: true, activeTopic: topic, activeNote: note,
+          selectedText: "", pendingMessage: message }),
+
+  clearPendingMessage: () => set({ pendingMessage: null }),
+
+  closeChat: () => set({ isOpen: false, selectedText: "", pendingMessage: null }),
 
   setActiveTopic: (topic, note) =>
-    set({ activeTopic: topic, activeNote: note, selectedText: "" }),
+    set({ activeTopic: topic, activeNote: note, selectedText: "", pendingMessage: null }),
 
   addMessage: (topicName, role, content) => {
     const msg = { id: Date.now() + Math.random(), role, content };

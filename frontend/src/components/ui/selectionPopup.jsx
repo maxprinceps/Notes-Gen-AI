@@ -1,16 +1,10 @@
-/**
- * components/ui/SelectionPopup.jsx — Fixed
- * Uses getBoundingClientRect + elementFromPoint to reliably
- * detect which topic card the selection is inside.
- */
-
 import { useState, useEffect } from "react";
 import useChatStore from "../../store/chatStore";
 import useNotesStore from "../../store/notesStore";
 
 export default function SelectionPopup() {
   const [popup, setPopup] = useState(null);
-  const { openChat } = useChatStore();
+  const { openChatWithMessage } = useChatStore();
   const { notes } = useNotesStore();
 
   useEffect(() => {
@@ -18,40 +12,34 @@ export default function SelectionPopup() {
       const selection = window.getSelection();
       const text = selection?.toString().trim();
 
-      if (!text || text.length < 3) {
-        setPopup(null);
-        return;
+      if (!text || text.length < 3) { setPopup(null); return; }
+
+      // Don't show popup inside exam question area
+      let node = selection.anchorNode;
+      while (node && node !== document.body) {
+        if (node.dataset?.noPopup === "true") { setPopup(null); return; }
+        node = node.parentNode;
       }
 
-      // Get position of selection
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
-      // Find which note card contains this selection
-      // by checking all note card elements
+      // Find which note card the selection is inside
       const noteCards = document.querySelectorAll("[data-topic]");
       let topicName = null;
       let noteObj = null;
+      const midX = rect.left + rect.width / 2;
+      const midY = rect.top + rect.height / 2;
 
       for (const card of noteCards) {
-        const cardRect = card.getBoundingClientRect();
-        // Check if selection midpoint is inside this card
-        const midX = rect.left + rect.width / 2;
-        const midY = rect.top + rect.height / 2;
-
-        if (
-          midX >= cardRect.left &&
-          midX <= cardRect.right &&
-          midY >= cardRect.top &&
-          midY <= cardRect.bottom
-        ) {
+        const r = card.getBoundingClientRect();
+        if (midX >= r.left && midX <= r.right && midY >= r.top && midY <= r.bottom) {
           topicName = card.dataset.topic;
           noteObj = notes.find((n) => n.topic === topicName);
           break;
         }
       }
 
-      // Fallback: use first note if detection fails
       if (!topicName && notes.length > 0) {
         topicName = notes[0].topic;
         noteObj = notes[0];
@@ -59,21 +47,13 @@ export default function SelectionPopup() {
 
       if (!topicName) return;
 
-      setPopup({
-        x: rect.left + rect.width / 2,
-        y: rect.top - 10,   // fixed positioning is viewport-relative, no scrollY needed
-        text,
-        topic: topicName,
-        note: noteObj,
-      });
+      setPopup({ x: midX, y: rect.top - 10, text, topic: topicName, note: noteObj });
     };
 
     const handleMouseDown = (e) => {
       if (!e.target.closest("[data-selection-popup]")) {
         setTimeout(() => {
-          if (!window.getSelection()?.toString().trim()) {
-            setPopup(null);
-          }
+          if (!window.getSelection()?.toString().trim()) setPopup(null);
         }, 100);
       }
     };
@@ -81,7 +61,6 @@ export default function SelectionPopup() {
     document.addEventListener("mouseup", handleSelection);
     document.addEventListener("touchend", handleSelection);
     document.addEventListener("mousedown", handleMouseDown);
-
     return () => {
       document.removeEventListener("mouseup", handleSelection);
       document.removeEventListener("touchend", handleSelection);
@@ -91,8 +70,13 @@ export default function SelectionPopup() {
 
   if (!popup) return null;
 
-  const handleChatAbout = () => {
-    openChat(popup.topic, popup.note, popup.text);
+  const handleChat = () => {
+    // Always use openChatWithMessage — works even if sidebar already open
+    openChatWithMessage(
+      popup.topic,
+      popup.note,
+      `Explain this to me in simple terms: "${popup.text}"`
+    );
     setPopup(null);
     window.getSelection()?.removeAllRanges();
   };
@@ -101,22 +85,17 @@ export default function SelectionPopup() {
     <div
       data-selection-popup="true"
       className="fixed z-50 no-print pointer-events-auto"
-      style={{
-        left: popup.x,
-        top: popup.y,
-        transform: "translate(-50%, -100%)",
-      }}
+      style={{ left: popup.x, top: popup.y, transform: "translate(-50%, -100%)" }}
     >
       <button
         onMouseDown={(e) => e.preventDefault()}
-        onClick={handleChatAbout}
+        onClick={handleChat}
         className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700
                    text-white text-xs font-bold px-3 py-2 rounded-lg
                    shadow-xl transition-colors whitespace-nowrap"
       >
         💬 Chat about this
-        <span className="bg-brand-orange text-white text-[9px] px-1.5 py-0.5
-                         rounded font-black ml-1">
+        <span className="bg-brand-orange text-white text-[9px] px-1.5 py-0.5 rounded font-black ml-1">
           AI
         </span>
       </button>

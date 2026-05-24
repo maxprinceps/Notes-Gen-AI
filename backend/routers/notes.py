@@ -127,53 +127,76 @@ def regenerate_element_endpoint(request: RegenerateRequest):
 class ChatRequest(BaseModel):
     subject: str
     topic: str
-    note_context: dict        # full note object for context
-    selected_text: str        # text student selected (can be empty)
-    messages: list[dict]      # full chat history [{role, content}]
-    user_message: str         # latest user message
+    note_context: dict
+    selected_text: str
+    messages: list[dict]
+    user_message: str
+    is_exam_question: bool = False   # triggers full exam-answer mode
 
 @router.post("/chat")
 async def chat_with_ai(request: ChatRequest):
-    """
-    Context-aware chat. AI knows the full note content
-    so it answers specifically about what the student is reading.
-    """
     from groq import Groq
     import os
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    # Build context from the note
     note = request.note_context
-    context = f"""You are a helpful B.Tech professor assistant.
+
+    # Build note context string
+    note_context_str = f"""DEFINITION: {note.get('definition', '')}
+KEY POINTS: {chr(10).join(f'- {p}' for p in note.get('key_points', []))}
+HOW IT WORKS: {chr(10).join(f'{i+1}. {s}' for i, s in enumerate(note.get('how_it_works', [])))}
+REAL EXAMPLE: {note.get('real_example', '')}
+IMPORTANT TERMS: {', '.join(f"{t['term']}: {t['meaning']}" for t in note.get('important_terms', []))}"""
+
+    # Different system prompt for exam answers vs general chat
+    if request.is_exam_question:
+        context = f"""You are an expert B.Tech professor for AKTU university exams.
+Subject: {request.subject}
+Topic: {request.topic}
+
+Notes for this topic:
+{note_context_str}
+
+Your job: Write a COMPLETE, STRUCTURED exam answer.
+Format your answer like a proper AKTU exam answer:
+- Start with a clear definition (1-2 lines)
+- Write the main explanation with numbered points
+- Include a relevant example
+- End with a concluding line
+- For 2-mark questions: write 4-6 lines
+- For 7-mark questions: write detailed paragraphs with all key aspects covered
+DO NOT give tips or advice on what to write. WRITE THE ACTUAL ANSWER DIRECTLY."""
+    else:
+        context = f"""You are a helpful B.Tech professor assistant.
 The student is reading notes on: {request.topic}
 Subject: {request.subject}
 
-Here are the notes for this topic:
-DEFINITION: {note.get('definition', '')}
-KEY POINTS: {', '.join(note.get('key_points', []))}
-EXAMPLE: {note.get('real_example', '')}
-HOW IT WORKS: {', '.join(note.get('how_it_works', []))}
+Notes for context:
+{note_context_str}
 
-{"The student selected this text: " + request.selected_text if request.selected_text else ""}
+{"Student selected this text: " + request.selected_text if request.selected_text else ""}
 
 Your job:
-- Answer ONLY about this topic and subject
-- Use simple language, Indian examples where possible
-- Keep answers concise — 3-5 sentences max unless asked for more
-- If asked something unrelated to the topic, gently redirect back
-- Never repeat the full notes — add VALUE beyond what's already written"""
+- Answer in simple conversational language
+- Use Indian examples (UPI, Aadhaar, IPL, local market) where relevant
+- Be concise — 3-5 sentences for simple questions, more for complex ones
+- Add value beyond what the notes already say
+- Stay focused on this topic"""
 
-    # Build message history for the API
     messages = [{"role": "system", "content": context}]
-    for msg in request.messages[-10:]:   # last 10 messages for context window
-        messages.append({"role": msg["role"], "content": msg["content"]})
+    # Include last 10 messages for context but skip empty ones
+    for msg in request.messages[-10:]:
+        if msg.get("content", "").strip():
+            messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": request.user_message})
+
+    max_tokens = 1200 if request.is_exam_question else 600
 
     def stream_response():
         with client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            max_tokens=600,
-            temperature=0.4,
+            max_tokens=max_tokens,
+            temperature=0.3,
             messages=messages,
             stream=True,
         ) as stream:
@@ -186,8 +209,5 @@ Your job:
     return StreamingResponse(
         stream_response(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        }
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

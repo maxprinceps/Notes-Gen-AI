@@ -214,6 +214,7 @@ export default function NoteCard({ note, index, subject, isStreaming = false }) 
         {(note.exam_questions_short?.length > 0 || note.exam_questions_long?.length > 0) && (
           <EditableSection {...editProps} elementKey="exam_questions_short" elementLabel="Exam Questions" className="mt-4">
             <div className="bg-brand-red rounded p-4 border-2 border-red-800"
+                 data-no-popup="true"
                  style={{ background: colors.exam_questions_short || undefined }}>
               <div className="font-black text-center text-sm text-white mb-1
                               border-b border-red-400 pb-2 tracking-wide">

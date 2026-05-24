@@ -14,10 +14,10 @@ const useChatStore = create((set, get) => ({
     set({ isOpen: true, activeTopic: topic, activeNote: note,
           selectedText, pendingMessage: null }),
 
-  // Open and immediately send a specific message (exam questions)
+  // Open and immediately send a specific message (exam questions + selection popup)
   openChatWithMessage: (topic, note, message) =>
     set({ isOpen: true, activeTopic: topic, activeNote: note,
-          selectedText: "", pendingMessage: message }),
+          selectedText: "", pendingMessage: { text: message, id: Date.now() } }),
 
   clearPendingMessage: () => set({ pendingMessage: null }),
 

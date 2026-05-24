@@ -23,36 +23,44 @@ export default function ChatSidebar() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, messages[messages.length - 1]?.content]);
 
-  // Handle opening — focus input and process pending/selected messages
+  // Watch pendingMessage — fires whenever a new selection or exam question is clicked
+  // Using pendingMessage.id ensures React sees every click as a new value
+  useEffect(() => {
+    if (!pendingMessage) return;
+    if (pendingMessage.id === pendingRef.current) return;
+    pendingRef.current = pendingMessage.id;
+    const messageText = pendingMessage.text;
+    clearPendingMessage();
+    // Use setTimeout 0 to let state settle before sending
+    setTimeout(() => {
+      setInput("");
+      sendMessage(messageText);
+    }, 0);
+  }, [pendingMessage?.id]);
+
+  // Handle sidebar open — focus input and handle selectedText on fresh conversations
   useEffect(() => {
     if (!isOpen) return;
-
     setTimeout(() => inputRef.current?.focus(), 300);
-
-    // pendingMessage = exam question click (always send, overrides history)
-    if (pendingMessage && pendingMessage !== pendingRef.current) {
-      pendingRef.current = pendingMessage;
-      clearPendingMessage();
-      handleSend(pendingMessage);
-      return;
+    if (selectedText && (histories[activeTopic] || []).length === 0) {
+      setTimeout(() => sendMessage(`Explain this to me simply: "${selectedText}"`), 200);
     }
+  }, [isOpen, activeTopic]);
 
-    // selectedText = text selection popup (only on fresh conversation)
-    if (selectedText && messages.length === 0) {
-      handleSend(`Explain this to me simply: "${selectedText}"`);
-    }
-  }, [isOpen, activeTopic, pendingMessage]);
+  const sendMessage = async (overrideMessage = null) => {
+    const store = useChatStore.getState();
+    const currentTopic = store.activeTopic;
+    const currentNote = store.activeNote;
+    const currentHistories = store.histories;
 
-  const handleSend = async (overrideMessage = null) => {
     const userMessage = overrideMessage || input.trim();
-    if (!userMessage || isTyping || !activeTopic) return;
+    if (!userMessage || store.isTyping || !currentTopic) return;
     setInput("");
 
-    addMessage(activeTopic, "user", userMessage);
-    setTyping(true);
-    addMessage(activeTopic, "assistant", "");
+    store.addMessage(currentTopic, "user", userMessage);
+    store.setTyping(true);
+    store.addMessage(currentTopic, "assistant", "");
 
-    // Detect if this is an exam question to adjust AI behavior
     const isExamQuestion = userMessage.toLowerCase().includes("exam question") ||
                            userMessage.toLowerCase().includes("help me write") ||
                            userMessage.toLowerCase().includes("answer for this");
@@ -62,30 +70,27 @@ export default function ChatSidebar() {
       await streamChat(
         {
           subject,
-          topic: activeTopic,
-          noteContext: activeNote || {},
-          selectedText: isExamQuestion ? "" : selectedText,
-          messages: histories[activeTopic] || [],
+          topic: currentTopic,
+          noteContext: currentNote || {},
+          selectedText: isExamQuestion ? "" : store.selectedText,
+          messages: currentHistories[currentTopic] || [],
           userMessage,
-          isExamQuestion,  // sent to backend to adjust prompt
+          isExamQuestion,
         },
         (chunk) => {
           accumulated += chunk;
-          updateLastMessage(activeTopic, accumulated);
+          store.updateLastMessage(currentTopic, accumulated);
         },
-        () => setTyping(false)
+        () => store.setTyping(false)
       );
     } catch (e) {
-      updateLastMessage(activeTopic, "Sorry, something went wrong. Please try again.");
-      setTyping(false);
+      store.updateLastMessage(currentTopic, "Sorry, something went wrong. Please try again.");
+      store.setTyping(false);
     }
   };
 
   const handleKey = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   const quickQuestions = [
@@ -162,7 +167,7 @@ export default function ChatSidebar() {
               </p>
               <div className="flex flex-wrap gap-1.5 mt-4 justify-center">
                 {quickQuestions.map((q) => (
-                  <button key={q} onClick={() => handleSend(q)}
+                  <button key={q} onClick={() => sendMessage(q)}
                           className="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700
                                      px-2.5 py-1 rounded-full border border-orange-200 transition-colors">
                     {q}
@@ -232,7 +237,7 @@ export default function ChatSidebar() {
                          transition-colors disabled:bg-gray-50"
             />
             <button
-              onClick={() => handleSend()}
+              onClick={() => sendMessage()}
               disabled={!input.trim() || isTyping}
               className="w-10 h-10 bg-brand-orange hover:bg-orange-700
                          disabled:bg-orange-200 text-white rounded-xl

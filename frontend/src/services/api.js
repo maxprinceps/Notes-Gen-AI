@@ -3,8 +3,7 @@
  * All communication with the FastAPI backend.
  */
 
-const BASE_URL = "http://localhost:8000/api";
-
+const BASE_URL = "https://notes-gen-ai.up.railway.app/api";
 /**
  * Standard (non-streaming) notes generation.
  * Used for testing. Frontend uses streamNotes() for real use.

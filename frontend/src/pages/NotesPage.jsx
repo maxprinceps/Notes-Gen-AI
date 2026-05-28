@@ -2,8 +2,16 @@
  * pages/NotesPage.jsx — Updated with Chat Sidebar
  */
 
-import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+// import { useEffect, useRef } from "react";
+// import { useNavigate } from "react-router-dom";
+// import useNotesStore from "../store/notesStore";
+// import useChatStore from "../store/chatstore";
+// import NoteCard from "../components/notes/NoteCard";
+// import StreamingCard from "../components/notes/StreamingCard";
+// import ChatSidebar from "../components/ui/ChatSidebar";
+// import SelectionPopup from "../components/ui/selectionPopup";
+// import { exportAsPdf } from "../utils/exportPdf";
+
 import useNotesStore from "../store/notesStore";
 import useChatStore from "../store/chatstore";
 import NoteCard from "../components/notes/NoteCard";

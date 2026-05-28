@@ -5,7 +5,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import useNotesStore from "../store/notesStore";
-import useChatStore from "../store/chatStore";
+import useChatStore from "../store/chatstore";
 import NoteCard from "../components/notes/NoteCard";
 import StreamingCard from "../components/notes/StreamingCard";
 import ChatSidebar from "../components/ui/ChatSidebar";

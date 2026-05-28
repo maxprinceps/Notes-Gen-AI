@@ -23,6 +23,13 @@ export default function ChatSidebar() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, messages[messages.length - 1]?.content]);
 
+  // Watch selectedText — fires when user selects text and clicks "Chat about this"
+  // This handles the case even when sidebar is already open with same topic
+  useEffect(() => {
+    if (!selectedText || !isOpen) return;
+    sendMessage(`Explain this to me simply: "${selectedText}"`);
+  }, [selectedText]);
+
   // Watch pendingMessage — fires whenever a new selection or exam question is clicked
   // Using pendingMessage.id ensures React sees every click as a new value
   useEffect(() => {

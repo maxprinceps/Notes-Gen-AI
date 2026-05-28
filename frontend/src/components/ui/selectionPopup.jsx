@@ -23,17 +23,18 @@ export default function SelectionPopup() {
 
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-
-      // Find which note card the selection is inside
-      const noteCards = document.querySelectorAll("[data-topic]");
-      let topicName = null;
-      let noteObj = null;
       const midX = rect.left + rect.width / 2;
       const midY = rect.top + rect.height / 2;
 
+      // Find which note card contains this selection using viewport coords
+      const noteCards = document.querySelectorAll("[data-topic]");
+      let topicName = null;
+      let noteObj = null;
+
       for (const card of noteCards) {
         const r = card.getBoundingClientRect();
-        if (midX >= r.left && midX <= r.right && midY >= r.top && midY <= r.bottom) {
+        if (midX >= r.left && midX <= r.right &&
+            midY >= r.top  && midY <= r.bottom) {
           topicName = card.dataset.topic;
           noteObj = notes.find((n) => n.topic === topicName);
           break;
@@ -47,6 +48,7 @@ export default function SelectionPopup() {
 
       if (!topicName) return;
 
+      // Position popup above selection — fixed coords, no scrollY needed
       setPopup({ x: midX, y: rect.top - 10, text, topic: topicName, note: noteObj });
     };
 
@@ -71,7 +73,8 @@ export default function SelectionPopup() {
   if (!popup) return null;
 
   const handleChat = () => {
-    // Always use openChatWithMessage — works even if sidebar already open
+    // openChatWithMessage uses {text, id} — id = Date.now() makes every click unique
+    // This fires even if sidebar is already open with same topic
     openChatWithMessage(
       popup.topic,
       popup.note,

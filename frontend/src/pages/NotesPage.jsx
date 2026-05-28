@@ -12,6 +12,7 @@
 // import SelectionPopup from "../components/ui/selectionPopup";
 // import { exportAsPdf } from "../utils/exportPdf";
 
+import { useEffect, useRef } from "react";
 import useNotesStore from "../store/notesStore";
 import useChatStore from "../store/chatstore";
 import NoteCard from "../components/notes/NoteCard";
@@ -19,6 +20,8 @@ import StreamingCard from "../components/notes/StreamingCard";
 import ChatSidebar from "../components/ui/ChatSidebar";
 import SelectionPopup from "../components/ui/selectionPopup";
 import { exportAsPdf } from "../utils/exportPdf";
+import { useNavigate } from "react-router-dom";
+
 
 export default function NotesPage() {
   const navigate = useNavigate();

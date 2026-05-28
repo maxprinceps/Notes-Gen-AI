@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import useChatStore from "../../store/chatStore";
+import useChatStore from "../../store/chatstore";
 import useNotesStore from "../../store/notesStore";
 import { streamChat } from "../../services/api";
 

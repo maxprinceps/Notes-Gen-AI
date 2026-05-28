@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import useChatStore from "../../store/chatStore";
+import useChatStore from "../../store/chatstore";
 import useNotesStore from "../../store/notesStore";
 
 export default function SelectionPopup() {

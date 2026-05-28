@@ -9,7 +9,7 @@ import DiagramBox from "./DiagramBox";
 import EditableSection from "../ui/EditableSection";
 import EditableText from "../ui/EditableText";
 import useNotesStore from "../../store/notesStore";
-import useChatStore from "../../store/chatStore";
+import useChatStore from "../../store/chatstore";
 
 export default function NoteCard({ note, index, subject, isStreaming = false }) {
   const { updateNoteField } = useNotesStore();

@@ -4,16 +4,17 @@ Sprint 1, Task 7
 All notes-related API endpoints.
 """
 
-import json
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from models.notes import SyllabusRequest, RegenerateRequest
 from services.generator import (
     generate_topic_notes,
     stream_topic_notes,
     regenerate_element
 )
+import json
+import re
 
 router = APIRouter(prefix="/api", tags=["notes"])
 
@@ -211,3 +212,107 @@ Your job:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── PDF Upload + Topic Extraction ─────────────────────────────────────────────
+
+from fastapi import UploadFile, File, Form
+import pdfplumber
+import io
+
+@router.post("/extract-topics")
+async def extract_topics_from_pdf(
+    file: UploadFile = File(...),
+    subject: str = Form(default="")
+):
+    """
+    Accepts a PDF syllabus upload.
+    Extracts text, sends to AI to identify topics.
+    Returns list of clean topic names.
+    """
+    # Validate file type
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    # Read file bytes
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
+
+    # Extract text from PDF
+    try:
+        pdf_text = ""
+        with pdfplumber.open(io.BytesIO(contents)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    pdf_text += text + "\n"
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read PDF: {str(e)}")
+
+    if not pdf_text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from PDF. Try a text-based PDF.")
+
+    # Limit text to avoid token overflow
+    pdf_text = pdf_text[:6000]
+
+    # Send to AI to extract topics
+    from groq import Groq
+    import os
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+    prompt = f"""You are analyzing a B.Tech university syllabus document.
+{"Subject: " + subject if subject else ""}
+
+Extract ALL topic names from this syllabus. These are the things students need to study.
+
+Rules:
+- Return ONLY a JSON array of topic name strings
+- Each topic should be 1-6 words
+- Remove unit numbers, serial numbers, practical components
+- Remove things like "Introduction to", keep just the core topic name
+- Include all topics from all units
+- Do NOT include things like "Practical", "Lab", "Assignment", "Project"
+- Maximum 30 topics
+
+Syllabus text:
+{pdf_text}
+
+Return ONLY this format, nothing else:
+["Topic 1", "Topic 2", "Topic 3", ...]"""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=1000,
+        temperature=0.1,
+        messages=[
+            {"role": "system", "content": "You extract topic lists from syllabus documents. Return only valid JSON arrays."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    # Clean up response
+    raw = re.sub(r"^```json\s*", "", raw)
+    raw = re.sub(r"^```\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    try:
+        topics = json.loads(raw)
+        if not isinstance(topics, list):
+            raise ValueError("Not a list")
+        # Clean each topic
+        topics = [str(t).strip() for t in topics if str(t).strip()]
+        topics = topics[:30]  # enforce limit
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="AI could not parse topics from your syllabus. Try a clearer PDF."
+        )
+
+    return {
+        "topics": topics,
+        "count": len(topics),
+        "extracted_text_length": len(pdf_text)
+    }

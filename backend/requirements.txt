@@ -3,3 +3,6 @@ uvicorn[standard]
 groq
 pydantic
 python-dotenv
+python-multipart
+pdfplumber
+pymupdf

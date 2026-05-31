@@ -3,11 +3,13 @@
  * All communication with the FastAPI backend.
  */
 
-const BASE_URL = "https://notes-gen-ai.up.railway.app/api";
+// const BASE_URL = "https://notes-gen-ai.up.railway.app/api";
 /**
  * Standard (non-streaming) notes generation.
  * Used for testing. Frontend uses streamNotes() for real use.
  */
+const BASE_URL = "http://localhost:8000/api";
+
 export async function generateNotes(subject, topics) {
   const res = await fetch(`${BASE_URL}/generate-notes`, {
     method: "POST",
@@ -136,4 +138,27 @@ export async function streamChat(
       }
     }
   }
+}
+
+/**
+ * Upload a PDF syllabus and extract topics from it.
+ * Returns { topics: string[], count: number }
+ */
+export async function extractTopicsFromPdf(file, subject = "") {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("subject", subject);
+
+  const res = await fetch(`${BASE_URL}/extract-topics`, {
+    method: "POST",
+    body: formData,
+    // Don't set Content-Type — browser sets it with boundary for multipart
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+    throw new Error(err.detail || "Upload failed");
+  }
+
+  return res.json();
 }

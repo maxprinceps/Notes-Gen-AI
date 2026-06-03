@@ -1,35 +1,42 @@
 """
 routers/notes.py
-Sprint 1, Task 7
-All notes-related API endpoints.
+All API endpoints for NoteGenAI
 """
+
+import json
+import re
+import io
+import os
+import base64
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from groq import Groq
+import pdfplumber
+import fitz  # PyMuPDF
+
 from models.notes import SyllabusRequest, RegenerateRequest
 from services.generator import (
     generate_topic_notes,
     stream_topic_notes,
-    regenerate_element
+    regenerate_element,
 )
-import json
-import re
 
 router = APIRouter(prefix="/api", tags=["notes"])
 
+
+# ── Health ────────────────────────────────────────────────────────────────────
 
 @router.get("/health")
 def health():
     return {"status": "NoteGenAI backend running"}
 
 
+# ── Notes Generation ──────────────────────────────────────────────────────────
+
 @router.post("/generate-notes")
 def generate_notes(request: SyllabusRequest):
-    """
-    Standard endpoint — generates all topics and returns complete JSON.
-    Use this for testing. Frontend will use the streaming endpoint.
-    """
     if not request.topics:
         raise HTTPException(status_code=400, detail="Topics list is empty")
     if len(request.topics) > 30:
@@ -47,10 +54,7 @@ def generate_notes(request: SyllabusRequest):
             print(f"[WARN] JSON parse failed for topic: {topic}")
             continue
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error generating topic '{topic}': {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error on '{topic}': {str(e)}")
 
     return {"subject": request.subject, "notes": results}
 
@@ -58,14 +62,8 @@ def generate_notes(request: SyllabusRequest):
 @router.post("/generate-notes-stream")
 async def generate_notes_stream(request: SyllabusRequest):
     """
-    SSE Streaming endpoint — streams each topic as it generates.
-    Frontend listens to this and renders notes live as tokens arrive.
-
-    Stream format:
-    - data: {"event": "topic_start", "topic": "Cyber Space", "index": 0}
-    - data: {"event": "token", "text": "{"topic":"}           ← raw JSON tokens
-    - data: {"event": "topic_end", "topic": "Cyber Space"}
-    - data: {"event": "done"}
+    SSE Streaming endpoint.
+    Events: topic_start | token | topic_end | error | done
     """
     if not request.topics:
         raise HTTPException(status_code=400, detail="Topics list is empty")
@@ -74,23 +72,14 @@ async def generate_notes_stream(request: SyllabusRequest):
 
     def event_stream():
         for i, topic in enumerate(topics):
-            # Signal topic start
             yield f"data: {json.dumps({'event': 'topic_start', 'topic': topic, 'index': i, 'total': len(topics)})}\n\n"
-
             try:
-                # Stream raw tokens for this topic
                 for chunk in stream_topic_notes(request.subject, topic):
-                    payload = json.dumps({"event": "token", "text": chunk})
-                    yield f"data: {payload}\n\n"
-
-                # Signal topic complete
+                    yield f"data: {json.dumps({'event': 'token', 'text': chunk})}\n\n"
                 yield f"data: {json.dumps({'event': 'topic_end', 'topic': topic, 'index': i})}\n\n"
-
             except Exception as e:
                 yield f"data: {json.dumps({'event': 'error', 'topic': topic, 'message': str(e)})}\n\n"
                 continue
-
-        # Signal all done
         yield f"data: {json.dumps({'event': 'done'})}\n\n"
 
     return StreamingResponse(
@@ -99,31 +88,29 @@ async def generate_notes_stream(request: SyllabusRequest):
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "Connection": "keep-alive"
-        }
+            "Connection": "keep-alive",
+        },
     )
 
 
+# ── Regenerate Element ────────────────────────────────────────────────────────
+
 @router.post("/regenerate-element")
 def regenerate_element_endpoint(request: RegenerateRequest):
-    """
-    Regenerates a single element on the notes page.
-    Called when user right-clicks and types an AI instruction.
-    """
     try:
         new_content = regenerate_element(
             element_type=request.element_type,
             current_content=request.current_content,
             user_instruction=request.user_instruction,
             topic=request.topic,
-            subject=request.subject
+            subject=request.subject,
         )
         return {"element_type": request.element_type, "content": new_content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Chat endpoint ─────────────────────────────────────────────────────────────
+# ── Chat ──────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     subject: str
@@ -132,24 +119,20 @@ class ChatRequest(BaseModel):
     selected_text: str
     messages: list[dict]
     user_message: str
-    is_exam_question: bool = False   # triggers full exam-answer mode
+    is_exam_question: bool = False
+
 
 @router.post("/chat")
 async def chat_with_ai(request: ChatRequest):
-    from groq import Groq
-    import os
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
     note = request.note_context
 
-    # Build note context string
     note_context_str = f"""DEFINITION: {note.get('definition', '')}
 KEY POINTS: {chr(10).join(f'- {p}' for p in note.get('key_points', []))}
 HOW IT WORKS: {chr(10).join(f'{i+1}. {s}' for i, s in enumerate(note.get('how_it_works', [])))}
 REAL EXAMPLE: {note.get('real_example', '')}
 IMPORTANT TERMS: {', '.join(f"{t['term']}: {t['meaning']}" for t in note.get('important_terms', []))}"""
 
-    # Different system prompt for exam answers vs general chat
     if request.is_exam_question:
         context = f"""You are an expert B.Tech professor for AKTU university exams.
 Subject: {request.subject}
@@ -159,17 +142,16 @@ Notes for this topic:
 {note_context_str}
 
 Your job: Write a COMPLETE, STRUCTURED exam answer.
-Format your answer like a proper AKTU exam answer:
+Format:
 - Start with a clear definition (1-2 lines)
-- Write the main explanation with numbered points
+- Main explanation with numbered points
 - Include a relevant example
-- End with a concluding line
-- For 2-mark questions: write 4-6 lines
-- For 7-mark questions: write detailed paragraphs with all key aspects covered
-DO NOT give tips or advice on what to write. WRITE THE ACTUAL ANSWER DIRECTLY."""
+- Concluding line
+- For 2-mark: 4-6 lines. For 7-mark: detailed paragraphs covering all aspects.
+DO NOT give tips. WRITE THE ACTUAL ANSWER DIRECTLY."""
     else:
         context = f"""You are a helpful B.Tech professor assistant.
-The student is reading notes on: {request.topic}
+Student is reading notes on: {request.topic}
 Subject: {request.subject}
 
 Notes for context:
@@ -177,15 +159,13 @@ Notes for context:
 
 {"Student selected this text: " + request.selected_text if request.selected_text else ""}
 
-Your job:
-- Answer in simple conversational language
-- Use Indian examples (UPI, Aadhaar, IPL, local market) where relevant
-- Be concise — 3-5 sentences for simple questions, more for complex ones
-- Add value beyond what the notes already say
-- Stay focused on this topic"""
+Rules:
+- Simple conversational language
+- Indian examples (UPI, Aadhaar, IPL) where relevant
+- 3-5 sentences for simple questions, more for complex ones
+- Add value beyond what notes already say"""
 
     messages = [{"role": "system", "content": context}]
-    # Include last 10 messages for context but skip empty ones
     for msg in request.messages[-10:]:
         if msg.get("content", "").strip():
             messages.append({"role": msg["role"], "content": msg["content"]})
@@ -216,69 +196,153 @@ Your job:
 
 # ── PDF Upload + Topic Extraction ─────────────────────────────────────────────
 
-from fastapi import UploadFile, File, Form
-import pdfplumber
-import io
+def extract_text_method1_pdfplumber(contents: bytes) -> str:
+    """Method 1: pdfplumber — best for digital PDFs"""
+    try:
+        text = ""
+        with pdfplumber.open(io.BytesIO(contents)) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    text += t + "\n"
+        return text.strip()
+    except Exception:
+        return ""
+
+
+def extract_text_method2_pymupdf(contents: bytes) -> str:
+    """Method 2: PyMuPDF — handles more PDF types"""
+    try:
+        text = ""
+        doc = fitz.open(stream=contents, filetype="pdf")
+        for page in doc:
+            t = page.get_text()
+            if t:
+                text += t + "\n"
+        doc.close()
+        return text.strip()
+    except Exception:
+        return ""
+
+
+def extract_text_method3_vision_ocr(contents: bytes) -> str:
+    """
+    Method 3: Vision AI OCR — for scanned/image PDFs.
+    Converts PDF pages to images → sends to Groq vision model → extracts text.
+    Works on ANY PDF regardless of how it was created.
+    """
+    try:
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        doc = fitz.open(stream=contents, filetype="pdf")
+        all_text = []
+
+        # Process max 5 pages to stay within API limits
+        max_pages = min(len(doc), 5)
+
+        for page_num in range(max_pages):
+            page = doc[page_num]
+
+            # Render page to image at 150 DPI
+            mat = fitz.Matrix(150 / 72, 150 / 72)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+            # Send to Groq vision model
+            response = client.chat.completions.create(
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                max_tokens=2000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{img_b64}"
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": "This is a page from a B.Tech university syllabus. Extract ALL the text visible on this page. Return only the raw text exactly as you see it, nothing else.",
+                            },
+                        ],
+                    }
+                ],
+            )
+
+            page_text = response.choices[0].message.content
+            if page_text and page_text.strip():
+                all_text.append(f"--- Page {page_num + 1} ---\n{page_text.strip()}")
+
+        doc.close()
+        return "\n\n".join(all_text)
+
+    except Exception as e:
+        print(f"[Vision OCR error]: {e}")
+        return ""
+
 
 @router.post("/extract-topics")
 async def extract_topics_from_pdf(
     file: UploadFile = File(...),
-    subject: str = Form(default="")
+    subject: str = Form(default=""),
 ):
     """
     Accepts a PDF syllabus upload.
-    Extracts text, sends to AI to identify topics.
-    Returns list of clean topic names.
+    Tries 3 extraction methods automatically:
+      1. pdfplumber (fast, digital PDFs)
+      2. PyMuPDF (good fallback)
+      3. Vision AI OCR (scanned/image PDFs — always works)
     """
-    # Validate file type
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    # Read file bytes
     contents = await file.read()
-    if len(contents) > 10 * 1024 * 1024:  # 10MB limit
+    if len(contents) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
 
-    # Extract text from PDF
-    try:
-        pdf_text = ""
-        with pdfplumber.open(io.BytesIO(contents)) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    pdf_text += text + "\n"
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read PDF: {str(e)}")
+    # Try methods in order
+    pdf_text = extract_text_method1_pdfplumber(contents)
+    used_ocr = False
+
+    if not pdf_text:
+        pdf_text = extract_text_method2_pymupdf(contents)
+
+    if not pdf_text:
+        # Last resort — vision AI OCR
+        pdf_text = extract_text_method3_vision_ocr(contents)
+        used_ocr = True
 
     if not pdf_text.strip():
-        raise HTTPException(status_code=400, detail="Could not extract text from PDF. Try a text-based PDF.")
+        raise HTTPException(
+            status_code=400,
+            detail="Could not read this PDF. Please make sure the file is not corrupted and contains readable content."
+        )
 
-    # Limit text to avoid token overflow
+    # Limit to avoid token overflow
     pdf_text = pdf_text[:6000]
 
-    # Send to AI to extract topics
-    from groq import Groq
-    import os
+    # Extract topics using AI
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    prompt = f"""You are analyzing a B.Tech university syllabus document.
+    prompt = f"""You are analyzing a B.Tech university syllabus.
 {"Subject: " + subject if subject else ""}
 
-Extract ALL topic names from this syllabus. These are the things students need to study.
+Extract ALL topic names students need to study from this syllabus text.
 
 Rules:
-- Return ONLY a JSON array of topic name strings
-- Each topic should be 1-6 words
-- Remove unit numbers, serial numbers, practical components
-- Remove things like "Introduction to", keep just the core topic name
-- Include all topics from all units
-- Do NOT include things like "Practical", "Lab", "Assignment", "Project"
+- Return ONLY a JSON array of strings
+- Each topic: 1-6 words
+- Remove unit numbers, serial numbers
+- Remove: "Practical", "Lab", "Assignment", "Project", "Experiment"
+- Include topics from ALL units
 - Maximum 30 topics
 
 Syllabus text:
 {pdf_text}
 
-Return ONLY this format, nothing else:
+Return ONLY this format:
 ["Topic 1", "Topic 2", "Topic 3", ...]"""
 
     response = client.chat.completions.create(
@@ -286,14 +350,15 @@ Return ONLY this format, nothing else:
         max_tokens=1000,
         temperature=0.1,
         messages=[
-            {"role": "system", "content": "You extract topic lists from syllabus documents. Return only valid JSON arrays."},
-            {"role": "user", "content": prompt}
-        ]
+            {
+                "role": "system",
+                "content": "You extract topic lists from syllabus documents. Return only valid JSON arrays. No explanation.",
+            },
+            {"role": "user", "content": prompt},
+        ],
     )
 
     raw = response.choices[0].message.content.strip()
-
-    # Clean up response
     raw = re.sub(r"^```json\s*", "", raw)
     raw = re.sub(r"^```\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
@@ -302,17 +367,17 @@ Return ONLY this format, nothing else:
         topics = json.loads(raw)
         if not isinstance(topics, list):
             raise ValueError("Not a list")
-        # Clean each topic
         topics = [str(t).strip() for t in topics if str(t).strip()]
-        topics = topics[:30]  # enforce limit
+        topics = topics[:30]
     except Exception:
         raise HTTPException(
             status_code=500,
-            detail="AI could not parse topics from your syllabus. Try a clearer PDF."
+            detail="AI could not parse topics from your syllabus. Please try again.",
         )
 
     return {
         "topics": topics,
         "count": len(topics),
-        "extracted_text_length": len(pdf_text)
+        "used_ocr": used_ocr,
+        "extracted_text_length": len(pdf_text),
     }

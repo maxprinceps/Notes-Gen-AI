@@ -8,7 +8,7 @@ import { supabase } from "../lib/supabase";
 import NoteCard from "../components/notes/NoteCard";
 import StreamingCard from "../components/notes/StreamingCard";
 import ChatSidebar from "../components/ui/ChatSidebar";
-import SelectionPopup from "../components/ui/selectionPopup";
+import SelectionPopup from "../components/ui/SelectionPopup";
 import { exportAsPdf } from "../utils/exportPdf";
 
 export default function NotesPage() {

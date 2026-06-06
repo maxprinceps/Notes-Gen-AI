@@ -4,21 +4,16 @@
  */
 
 const BASE_URL = "https://notes-gen-ai.up.railway.app/api";
-/**
- * Standard (non-streaming) notes generation.
- * Used for testing. Frontend uses streamNotes() for real use.
- */
-// const BASE_URL = "http://localhost:8000/api";
 
-export async function generateNotes(subject, topics) {
-  const res = await fetch(`${BASE_URL}/generate-notes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ subject, topics }),
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
-}
+// export async function generateNotes(subject, topics) {
+//   const res = await fetch(`${BASE_URL}/generate-notes`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({ subject, topics }),
+//   });
+//   if (!res.ok) throw new Error(`API error: ${res.status}`);
+//   return res.json();
+// }
 
 /**
  * SSE Streaming — main function used by the notes canvas.

@@ -1,10 +1,8 @@
-/**
- * pages/InputPage.jsx — with PDF upload feature
- */
-
+// src/pages/InputPage.jsx — with auth header
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import useNotesStore from "../store/notesStore";
+import useAuthStore from "../store/authStore";
 import { streamNotes, extractTopicsFromPdf } from "../services/api";
 
 export default function InputPage() {
@@ -15,6 +13,8 @@ export default function InputPage() {
     commitTopic, finishGeneration,
   } = useNotesStore();
 
+  const { user, signOut } = useAuthStore();
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -22,23 +22,20 @@ export default function InputPage() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  // ── PDF Upload Handler ───────────────────────────────────────────────────
-
   const handlePdfUpload = async (file) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please upload a PDF file.");
       return;
     }
-
     setError("");
     setPdfSuccess("");
     setPdfLoading(true);
-
     try {
-      const result = await extractTopicsFromPdf(file, subject);
+      const { extractTopicsFromPdf: extract } = await import("../services/api");
+      const result = await extract(file, subject);
       setTopicsRaw(result.topics.join("\n"));
-      setPdfSuccess(`✅ Extracted ${result.count} topics from your syllabus PDF`);
+      setPdfSuccess(`✅ Extracted ${result.count} topics from your syllabus`);
     } catch (e) {
       setError(e.message || "Could not extract topics from PDF.");
     } finally {
@@ -58,21 +55,14 @@ export default function InputPage() {
     if (file) handlePdfUpload(file);
   };
 
-  // ── Notes Generation ─────────────────────────────────────────────────────
-
   const handleGenerate = async () => {
     setError("");
-
     if (!subject.trim()) { setError("Please enter a subject name."); return; }
     if (!topicsRaw.trim()) { setError("Please enter or upload topics."); return; }
 
-    const topics = topicsRaw
-      .split("\n")
-      .map((t) => t.trim())
-      .filter(Boolean);
-
+    const topics = topicsRaw.split("\n").map((t) => t.trim()).filter(Boolean);
     if (topics.length === 0) { setError("No valid topics found."); return; }
-    if (topics.length > 30)  { setError("Maximum 30 topics allowed."); return; }
+    if (topics.length > 30) { setError("Maximum 30 topics allowed."); return; }
 
     setLoading(true);
     startGeneration(topics.length);
@@ -86,7 +76,7 @@ export default function InputPage() {
         else if (event.event === "done")   finishGeneration();
       });
     } catch (e) {
-      setError(`Failed to connect to backend: ${e.message}`);
+      setError(`Failed to connect: ${e.message}`);
       finishGeneration();
     } finally {
       setLoading(false);
@@ -98,6 +88,35 @@ export default function InputPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-blue-50
                     flex flex-col items-center justify-center p-6">
+
+      {/* Auth header */}
+      <div className="w-full max-w-xl flex justify-end mb-4 gap-3">
+        {user ? (
+          <>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="text-sm font-bold text-gray-600 hover:text-brand-orange
+                         transition-colors"
+            >
+              📚 My Notes
+            </button>
+            <button
+              onClick={signOut}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Sign Out
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => navigate("/auth")}
+            className="text-sm font-bold text-brand-orange hover:text-orange-700
+                       transition-colors"
+          >
+            Log In / Sign Up →
+          </button>
+        )}
+      </div>
 
       {/* Logo */}
       <div className="mb-8 text-center">
@@ -112,10 +131,8 @@ export default function InputPage() {
       {/* Card */}
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-8 border border-gray-100">
 
-        {/* Subject input */}
-        <label className="block text-sm font-bold text-gray-700 mb-1">
-          Subject Name
-        </label>
+        {/* Subject */}
+        <label className="block text-sm font-bold text-gray-700 mb-1">Subject Name</label>
         <input
           type="text"
           value={subject}
@@ -125,16 +142,12 @@ export default function InputPage() {
                      focus:outline-none focus:border-brand-orange mb-5 transition-colors"
         />
 
-        {/* PDF Upload Zone */}
+        {/* PDF Upload */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-bold text-gray-700">
-              Upload Syllabus PDF
-            </label>
+            <label className="text-sm font-bold text-gray-700">Upload Syllabus PDF</label>
             <span className="text-xs text-gray-400">optional</span>
           </div>
-
-          {/* Drag & Drop zone */}
           <div
             onDrop={handleDrop}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -144,39 +157,24 @@ export default function InputPage() {
                         transition-all duration-200
                         ${dragOver
                           ? "border-brand-orange bg-orange-50"
-                          : "border-gray-200 hover:border-orange-300 hover:bg-orange-50"
-                        }`}
+                          : "border-gray-200 hover:border-orange-300 hover:bg-orange-50"}`}
           >
             {pdfLoading ? (
               <div className="flex flex-col items-center gap-2">
                 <div className="w-6 h-6 border-2 border-brand-orange border-t-transparent
                                 rounded-full animate-spin" />
-                <p className="text-sm text-brand-orange font-bold">
-                  Extracting topics from PDF...
-                </p>
+                <p className="text-sm text-brand-orange font-bold">Extracting topics...</p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-1">
                 <span className="text-3xl">📄</span>
-                <p className="text-sm font-bold text-gray-700">
-                  Drop your syllabus PDF here
-                </p>
-                <p className="text-xs text-gray-400">
-                  or click to browse — max 10MB
-                </p>
+                <p className="text-sm font-bold text-gray-700">Drop your syllabus PDF here</p>
+                <p className="text-xs text-gray-400">or click to browse — max 10MB</p>
               </div>
             )}
           </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            onChange={handleFileInput}
-            className="hidden"
-          />
-
-          {/* Success message */}
+          <input ref={fileInputRef} type="file" accept=".pdf"
+                 onChange={handleFileInput} className="hidden" />
           {pdfSuccess && (
             <div className="mt-2 bg-green-50 border border-green-200 text-green-700
                             text-xs rounded-lg px-3 py-2 font-medium">
@@ -192,7 +190,7 @@ export default function InputPage() {
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
-        {/* Topics textarea */}
+        {/* Topics */}
         <label className="block text-sm font-bold text-gray-700 mb-1">
           Syllabus Topics
           <span className="text-gray-400 font-normal ml-2">(one topic per line)</span>
@@ -200,39 +198,33 @@ export default function InputPage() {
         <textarea
           value={topicsRaw}
           onChange={(e) => setTopicsRaw(e.target.value)}
-          placeholder={"Cyber Space\nCyber Crime\nJurisdictional Concerns\nDigital Forensics\nEvidence Management"}
+          placeholder={"Cyber Space\nCyber Crime\nJurisdiction\nDigital Forensics"}
           rows={8}
           className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 text-sm
                      focus:outline-none focus:border-brand-orange resize-none
                      transition-colors font-mono"
         />
-
-        {/* Topic count */}
         <p className="text-xs text-gray-400 mt-1 mb-5">
           {topicCount} topic{topicCount !== 1 ? "s" : ""} detected
         </p>
 
-        {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm
-                          rounded-lg px-4 py-2 mb-4">
-            {error}
-          </div>
+                          rounded-lg px-4 py-2 mb-4">{error}</div>
         )}
 
-        {/* Generate button */}
         <button
           onClick={handleGenerate}
           disabled={loading || pdfLoading}
-          className="w-full bg-brand-orange hover:bg-orange-700
-                     disabled:bg-orange-300 text-white font-black text-base
-                     py-3 rounded-lg transition-colors tracking-wide shadow-md"
+          className="w-full bg-brand-orange hover:bg-orange-700 disabled:bg-orange-300
+                     text-white font-black text-base py-3 rounded-lg
+                     transition-colors tracking-wide shadow-md"
         >
           {loading ? "Connecting..." : "⚡ Generate Notes"}
         </button>
 
         <p className="text-xs text-gray-400 text-center mt-4">
-          Notes generate live — you'll watch each page being built in real time.
+          Notes generate live — watch each page being built in real time.
         </p>
       </div>
     </div>

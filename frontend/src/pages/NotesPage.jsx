@@ -1,27 +1,15 @@
-/**
- * pages/NotesPage.jsx — Updated with Chat Sidebar
- */
-
-// import { useEffect, useRef } from "react";
-// import { useNavigate } from "react-router-dom";
-// import useNotesStore from "../store/notesStore";
-// import useChatStore from "../store/chatstore";
-// import NoteCard from "../components/notes/NoteCard";
-// import StreamingCard from "../components/notes/StreamingCard";
-// import ChatSidebar from "../components/ui/ChatSidebar";
-// import SelectionPopup from "../components/ui/selectionPopup";
-// import { exportAsPdf } from "../utils/exportPdf";
-
-import { useEffect, useRef } from "react";
+// src/pages/NotesPage.jsx — with Save Notes feature
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import useNotesStore from "../store/notesStore";
-import useChatStore from "../store/chatstore";
+import useChatStore from "../store/chatStore";
+import useAuthStore from "../store/authStore";
+import { supabase } from "../lib/supabase";
 import NoteCard from "../components/notes/NoteCard";
 import StreamingCard from "../components/notes/StreamingCard";
 import ChatSidebar from "../components/ui/ChatSidebar";
-import SelectionPopup from "../components/ui/selectionPopup";
+import SelectionPopup from "../components/ui/SelectionPopup";
 import { exportAsPdf } from "../utils/exportPdf";
-import { useNavigate } from "react-router-dom";
-
 
 export default function NotesPage() {
   const navigate = useNavigate();
@@ -30,10 +18,14 @@ export default function NotesPage() {
   const {
     subject, notes, isGenerating,
     currentTopicName, totalTopics,
-    streamBuffer, reset,
+    streamBuffer, reset, topicsRaw,
   } = useNotesStore();
 
   const { openChat, isOpen } = useChatStore();
+  const { user } = useAuthStore();
+
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     if (!subject) navigate("/");
@@ -48,8 +40,59 @@ export default function NotesPage() {
     : 0;
 
   const handleFloatingChat = () => {
-    if (notes.length > 0) {
-      openChat(notes[0].topic, notes[0], "");
+    if (notes.length > 0) openChat(notes[0].topic, notes[0], "");
+  };
+
+  // ── Save Notes to Supabase ───────────────────────────────────────────────
+
+  const handleSave = async () => {
+    if (!user) { navigate("/auth"); return; }
+    if (notes.length === 0) return;
+
+    setSaving(true);
+    setSaveSuccess(false);
+
+    const topics = topicsRaw
+      ? topicsRaw.split("\n").map((t) => t.trim()).filter(Boolean)
+      : notes.map((n) => n.topic);
+
+    // Check if this subject already exists for this user
+    const { data: existing } = await supabase
+      .from("notes")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("subject", subject)
+      .single();
+
+    let error;
+
+    if (existing) {
+      // Update existing
+      ({ error } = await supabase
+        .from("notes")
+        .update({
+          topics,
+          notes_data: notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id));
+    } else {
+      // Insert new
+      ({ error } = await supabase.from("notes").insert({
+        user_id: user.id,
+        subject,
+        topics,
+        notes_data: notes,
+      }));
+    }
+
+    setSaving(false);
+
+    if (!error) {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } else {
+      alert("Failed to save. Please try again.");
     }
   };
 
@@ -60,24 +103,30 @@ export default function NotesPage() {
       <div className="no-print sticky top-0 z-40 bg-white border-b border-gray-200
                       shadow-sm px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="font-black text-lg text-gray-900">
+          <h1
+            onClick={() => navigate("/")}
+            className="font-black text-lg text-gray-900 cursor-pointer"
+          >
             Note<span className="text-brand-orange">Gen</span>AI
           </h1>
-          <span className="text-sm text-gray-400 font-medium">— {subject}</span>
+          <span className="text-sm text-gray-400 font-medium truncate max-w-48">
+            — {subject}
+          </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Progress bar */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+
+          {/* Progress */}
           {isGenerating && (
             <div className="flex items-center gap-2">
-              <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-brand-orange rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>
               <span className="text-xs text-gray-500 font-medium whitespace-nowrap">
-                {notes.length}/{totalTopics} topics
+                {notes.length}/{totalTopics}
               </span>
             </div>
           )}
@@ -90,11 +139,46 @@ export default function NotesPage() {
             </span>
           )}
 
-          {/* Chat button */}
+          {/* My Notes / Login */}
+          {user ? (
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="text-sm text-gray-500 hover:text-gray-800
+                         transition-colors font-medium"
+            >
+              📚 My Notes
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate("/auth")}
+              className="text-sm text-gray-500 hover:text-brand-orange
+                         transition-colors font-medium"
+            >
+              Log In
+            </button>
+          )}
+
+          {/* Save button */}
+          {!isGenerating && notes.length > 0 && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className={`flex items-center gap-1.5 font-bold text-sm px-4 py-2
+                          rounded-lg transition-colors shadow-sm
+                          ${saveSuccess
+                            ? "bg-green-500 text-white"
+                            : "bg-gray-800 hover:bg-gray-700 text-white"
+                          }`}
+            >
+              {saving ? "Saving..." : saveSuccess ? "✅ Saved!" : "💾 Save Notes"}
+            </button>
+          )}
+
+          {/* Chat */}
           {!isGenerating && notes.length > 0 && (
             <button
               onClick={handleFloatingChat}
-              className="flex items-center gap-2 bg-gray-900 hover:bg-gray-700
+              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700
                          text-white font-bold text-sm px-4 py-2 rounded-lg
                          transition-colors shadow-sm"
             >
@@ -106,7 +190,7 @@ export default function NotesPage() {
           {!isGenerating && notes.length > 0 && (
             <button
               onClick={() => exportAsPdf(subject)}
-              className="flex items-center gap-2 bg-brand-red hover:bg-red-700
+              className="flex items-center gap-1.5 bg-brand-red hover:bg-red-700
                          text-white font-bold text-sm px-4 py-2 rounded-lg
                          transition-colors shadow-sm"
             >
@@ -117,9 +201,10 @@ export default function NotesPage() {
           {/* Back */}
           <button
             onClick={() => { reset(); navigate("/"); }}
-            className="text-sm text-gray-500 hover:text-gray-800 transition-colors font-medium"
+            className="text-sm text-gray-500 hover:text-gray-800
+                       transition-colors font-medium"
           >
-            ← New Notes
+            ← New
           </button>
         </div>
       </div>
@@ -129,7 +214,6 @@ export default function NotesPage() {
                        print:max-w-none transition-all duration-300
                        ${isOpen ? "mr-96" : ""}`}>
 
-        {/* Empty state */}
         {notes.length === 0 && !isGenerating && (
           <div className="text-center py-20 text-gray-400 no-print">
             <p className="text-lg font-medium">No notes yet.</p>
@@ -142,7 +226,6 @@ export default function NotesPage() {
           </div>
         )}
 
-        {/* Completed note cards */}
         {notes.map((note, i) => (
           <NoteCard
             key={note.topic || i}
@@ -153,7 +236,6 @@ export default function NotesPage() {
           />
         ))}
 
-        {/* Streaming card */}
         {isGenerating && streamBuffer && (
           <StreamingCard
             topicName={currentTopicName}
@@ -163,7 +245,6 @@ export default function NotesPage() {
           />
         )}
 
-        {/* Generating indicator */}
         {isGenerating && !streamBuffer && (
           <div className="no-print w-full max-w-3xl mx-auto mb-10">
             <div className="grid-bg border border-gray-200 rounded-sm shadow-xl p-10">
@@ -187,12 +268,24 @@ export default function NotesPage() {
                 All {notes.length} topics generated!
               </p>
               <p className="text-gray-500 text-sm">
-                Select any text to chat with AI • Right-click to edit
+                Select any text to chat • Right-click to edit • Save to access later
               </p>
-              <div className="flex gap-3 mt-2">
+              <div className="flex gap-2 mt-2 flex-wrap justify-center">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className={`flex items-center gap-1.5 font-bold px-5 py-2.5
+                              rounded-lg transition-colors shadow-md text-sm
+                              ${saveSuccess
+                                ? "bg-green-500 text-white"
+                                : "bg-gray-800 hover:bg-gray-700 text-white"
+                              }`}
+                >
+                  {saving ? "Saving..." : saveSuccess ? "✅ Saved!" : "💾 Save Notes"}
+                </button>
                 <button
                   onClick={handleFloatingChat}
-                  className="flex items-center gap-2 bg-gray-900 hover:bg-gray-700
+                  className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700
                              text-white font-bold px-5 py-2.5 rounded-lg
                              transition-colors shadow-md text-sm"
                 >
@@ -200,7 +293,7 @@ export default function NotesPage() {
                 </button>
                 <button
                   onClick={() => exportAsPdf(subject)}
-                  className="flex items-center gap-2 bg-brand-red hover:bg-red-700
+                  className="flex items-center gap-1.5 bg-brand-red hover:bg-red-700
                              text-white font-bold px-5 py-2.5 rounded-lg
                              transition-colors shadow-md text-sm"
                 >
@@ -214,7 +307,7 @@ export default function NotesPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Floating chat button (visible while scrolling) ── */}
+      {/* Floating chat button */}
       {!isGenerating && notes.length > 0 && !isOpen && (
         <button
           onClick={handleFloatingChat}
@@ -227,12 +320,8 @@ export default function NotesPage() {
         </button>
       )}
 
-      {/* ── Selection popup ── */}
       <SelectionPopup />
-
-      {/* ── Chat sidebar ── */}
       <ChatSidebar />
-
     </div>
   );
 }
